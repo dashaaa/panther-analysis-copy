@@ -1,0 +1,17 @@
+AnalysisType: pack
+PackID: PantherManaged.Okta
+Description: Group of all Okta detections
+PackDefinition:
+  IDs:
+    - Okta.AdminRoleAssigned
+    - Okta.APIKeyCreated
+    - Okta.APIKeyRevoked
+    - Okta.GeographicallyImprobableAccess
+    - Okta.Support.Access
+    - Okta.Global.MFA.Disabled
+    # Globals used in these detections
+    - panther_base_helpers
+    - panther_oss_helpers
+    # Data Model
+    - Standard.Okta.SystemLog
+DisplayName: Panther Okta Pack
