@@ -11,95 +11,8 @@ import unittest
 sys.path.append(os.path.dirname(__file__))
 
 import panther_base_helpers as p_b_h  # pylint: disable=C0413
+import panther_ipinfo_helpers as p_i_h  # pylint: disable=C0413
 import panther_tor_helpers as p_tor_h  # pylint: disable=C0413
-
-
-class TestEksPantherObjRef(unittest.TestCase):
-    def setUp(self):
-        # pylint: disable=C0301
-        self.event = {
-            "annotations": {
-                "authorization.k8s.io/decision": "allow",
-                "authorization.k8s.io/reason": "",
-            },
-            "apiVersion": "audit.k8s.io/v1",
-            "auditID": "35506555-dffc-4337-b2b1-c4af52b88e18",
-            "kind": "Event",
-            "level": "Request",
-            "objectRef": {
-                "apiVersion": "v1",
-                "name": "some-job-xxx1y",
-                "namespace": "default",
-                "resource": "pods",
-                "subresource": "log",
-            },
-            "p_any_aws_account_ids": ["123412341234"],
-            "p_any_aws_arns": [
-                "arn:aws:iam::123412341234:role/KubeAdministrator",
-                "arn:aws:sts::123412341234:assumed-role/KubeAdministrator/1669660343296132000",
-            ],
-            "p_any_ip_addresses": ["5.5.5.5"],
-            "p_any_usernames": ["kubernetes-admin"],
-            "p_event_time": "2022-11-29 00:09:04.38",
-            "p_log_type": "Amazon.EKS.Audit",
-            "p_parse_time": "2022-11-29 00:10:25.067",
-            "p_row_id": "2e4ab474b0f0f7a4a8fff4f014aab32a",
-            "p_source_id": "4c859cd4-9406-469b-9e0e-c2dc1bee24fa",
-            "p_source_label": "example-cluster-eks-logs",
-            "requestReceivedTimestamp": "2022-11-29 00:09:04.38",
-            "requestURI": "/api/v1/namespaces/default/pods/kube-bench-drn4j/log?container=kube-bench",
-            "responseStatus": {"code": 200},
-            "sourceIPs": ["5.5.5.5"],
-            "stage": "ResponseComplete",
-            "stageTimestamp": "2022-11-29 00:09:04.394",
-            "user": {
-                "extra": {
-                    "accessKeyId": ["ASIARLIVEKVNNXXXXXXX"],
-                    "arn": [
-                        "arn:aws:sts::123412341234:assumed-role/KubeAdministrator/1669660343296132000"
-                    ],
-                    "canonicalArn": ["arn:aws:iam::123412341234:role/KubeAdministrator"],
-                    "sessionName": ["1669660343296132000"],
-                },
-                "groups": ["system:masters", "system:authenticated"],
-                "uid": "aws-iam-authenticator:123412341234:AROARLIVEXXXXXXXXXXXX",
-                "username": "kubernetes-admin",
-            },
-            "userAgent": "kubectl/v1.25.4 (darwin/arm64) kubernetes/872a965",
-            "verb": "get",
-        }
-
-    def test_complete_event(self):
-        response = p_b_h.eks_panther_obj_ref(self.event)
-        self.assertEqual(response.get("actor", ""), "kubernetes-admin")
-        self.assertEqual(response.get("object", ""), "some-job-xxx1y")
-        self.assertEqual(response.get("ns", ""), "default")
-        self.assertEqual(len(response.get("sourceIPs", [])), 1)
-        self.assertEqual(response.get("sourceIPs", [])[0], "5.5.5.5")
-        self.assertEqual(response.get("resource", ""), "pods/log")
-        self.assertEqual(response.get("verb", ""), "get")
-        self.assertEqual(response.get("p_source_label", ""), "example-cluster-eks-logs")
-
-    def test_all_missing_event(self):
-        del self.event["user"]["username"]
-        del self.event["objectRef"]
-        del self.event["sourceIPs"]
-        del self.event["verb"]
-        del self.event["p_source_label"]
-        response = p_b_h.eks_panther_obj_ref(self.event)
-        self.assertEqual(response.get("actor", ""), "<NO_USERNAME>")
-        self.assertEqual(response.get("object", ""), "<NO_OBJECT_NAME>")
-        self.assertEqual(response.get("ns", ""), "<NO_OBJECT_NAMESPACE>")
-        self.assertEqual(len(response.get("sourceIPs", [])), 1)
-        self.assertEqual(response.get("sourceIPs", [])[0], "0.0.0.0")  # nosec
-        self.assertEqual(response.get("resource", ""), "<NO_OBJECT_RESOURCE>")
-        self.assertEqual(response.get("verb", ""), "<NO_VERB>")
-        self.assertEqual(response.get("p_source_label", ""), "<NO_P_SOURCE_LABEL>")
-
-    def test_missing_subresource_event(self):
-        del self.event["objectRef"]["subresource"]
-        response = p_b_h.eks_panther_obj_ref(self.event)
-        self.assertEqual(response.get("resource", ""), "pods")
 
 
 class TestGetValFromList(unittest.TestCase):
@@ -224,6 +137,191 @@ class TestTorExitNodes(unittest.TestCase):
                 # pylint: disable=line-too-long
                 "ExoneraTorURL": f"https://metrics.torproject.org/exonerator.html?ip=1.2.3.4&timestamp={today}&lang=en",
             },
+        )
+
+
+class TestIpInfoHelpersLocation(unittest.TestCase):
+    def setUp(self):
+        self.match_field = "clientIp"
+        self.event = {
+            "p_enrichment": {
+                p_i_h.IPINFO_LOCATION_LUT_NAME: {
+                    self.match_field: {
+                        "city": "Constantinople",
+                        "country": "Byzantium",
+                        "lat": "41.008610",
+                        "lng": "28.971111",
+                        "postal_code": "NA",
+                        "region": "Asia Minor",
+                        "region_code": "123",
+                        "timezone": "GMT+03:00",
+                    }
+                }
+            }
+        }
+        self.ip_info = p_i_h.get_ipinfo_location(self.event)
+
+    def test_city(self):
+        city = self.ip_info.city(self.match_field)
+        self.assertEqual(city, "Constantinople")
+
+    def test_country(self):
+        country = self.ip_info.country(self.match_field)
+        self.assertEqual(country, "Byzantium")
+
+    def test_latitude(self):
+        latitude = self.ip_info.latitude(self.match_field)
+        self.assertEqual(latitude, "41.008610")
+
+    def test_longitude(self):
+        longitude = self.ip_info.longitude(self.match_field)
+        self.assertEqual(longitude, "28.971111")
+
+    def test_postal_code(self):
+        postal_code = self.ip_info.postal_code(self.match_field)
+        self.assertEqual(postal_code, "NA")
+
+    def test_region(self):
+        region = self.ip_info.region(self.match_field)
+        self.assertEqual(region, "Asia Minor")
+
+    def test_region_code(self):
+        region_code = self.ip_info.region_code(self.match_field)
+        self.assertEqual(region_code, "123")
+
+    def test_timezone(self):
+        timezone = self.ip_info.timezone(self.match_field)
+        self.assertEqual(timezone, "GMT+03:00")
+
+    def test_not_found(self):
+        self.assertEqual(self.ip_info.timezone("not_found"), None)
+
+    def test_context(self):
+        expected = {
+            "City": "Constantinople",
+            "Country": "Byzantium",
+            "Latitude": "41.008610",
+            "Longitude": "28.971111",
+            "PostalCode": "NA",
+            "Region": "Asia Minor",
+            "RegionCode": "123",
+            "Timezone": "GMT+03:00",
+        }
+        self.assertEqual(expected, self.ip_info.context(self.match_field))
+
+
+class TestIpInfoHelpersASN(unittest.TestCase):
+    def setUp(self):
+        self.match_field = "clientIp"
+        self.event = {
+            "p_enrichment": {
+                p_i_h.IPINFO_ASN_LUT_NAME: {
+                    self.match_field: {
+                        "asn": "AS00000",
+                        "domain": "byzantineempire.com",
+                        "name": "Byzantine Empire",
+                        "route": "1.2.3.4/24",
+                        "type": "isp",
+                    }
+                }
+            }
+        }
+        self.ip_info = p_i_h.get_ipinfo_asn(self.event)
+
+    def test_asn(self):
+        asn = self.ip_info.asn(self.match_field)
+        self.assertEqual(asn, "AS00000")
+
+    def test_domain(self):
+        domain = self.ip_info.domain(self.match_field)
+        self.assertEqual(domain, "byzantineempire.com")
+
+    def test_name(self):
+        name = self.ip_info.name(self.match_field)
+        self.assertEqual(name, "Byzantine Empire")
+
+    def test_route(self):
+        route = self.ip_info.route(self.match_field)
+        self.assertEqual(route, "1.2.3.4/24")
+
+    def test_type(self):
+        _type = self.ip_info.type(self.match_field)
+        self.assertEqual(_type, "isp")
+
+    def test_not_found(self):
+        self.assertEqual(self.ip_info.type("not_found"), None)
+
+    def test_context(self):
+        expected = {
+            "ASN": "AS00000",
+            "Domain": "byzantineempire.com",
+            "Name": "Byzantine Empire",
+            "Route": "1.2.3.4/24",
+            "Type": "isp",
+        }
+        self.assertEqual(expected, self.ip_info.context(self.match_field))
+
+
+class TestGeoInfoFromIP(unittest.TestCase):
+    def setUp(self):
+        self.match_field = "clientIp"
+        self.event = {
+            "p_enrichment": {
+                p_i_h.IPINFO_ASN_LUT_NAME: {
+                    self.match_field: {
+                        "asn": "AS00000",
+                        "domain": "byzantineempire.com",
+                        "name": "Byzantine Empire",
+                        "route": "1.2.3.4/24",
+                        "type": "isp",
+                    }
+                },
+                p_i_h.IPINFO_LOCATION_LUT_NAME: {
+                    self.match_field: {
+                        "city": "Constantinople",
+                        "country": "Byzantium",
+                        "lat": "41.008610",
+                        "lng": "28.971111",
+                        "postal_code": "NA",
+                        "region": "Asia Minor",
+                        "region_code": "123",
+                        "timezone": "GMT+03:00",
+                    }
+                },
+            },
+            self.match_field: "1.2.3.4",
+        }
+
+    def test_geoinfo(self):
+        geoinfo = p_i_h.geoinfo_from_ip(self.event, self.match_field)
+        expected = {
+            "city": "Constantinople",
+            "country": "Byzantium",
+            "ip": "1.2.3.4",
+            "loc": "41.008610,28.971111",
+            "org": "AS00000 Byzantine Empire",
+            "postal": "NA",
+            "region": "Asia Minor",
+            "timezone": "GMT+03:00",
+        }
+        self.assertEqual(expected, geoinfo)
+
+    def test_ipinfo_not_enabled_exception(self):
+        event = {"p_enrichment": {}}
+        with self.assertRaises(p_i_h.PantherIPInfoException) as exc:
+            p_i_h.geoinfo_from_ip(event, "fake_field")
+
+        self.assertEqual(
+            exc.exception.args[0], "Please enable both IPInfo Location and ASN Enrichment Providers"
+        )
+
+    def test_ipinfo_missing_match_exception(self):
+        with self.assertRaises(p_i_h.PantherIPInfoException) as exc:
+            p_i_h.geoinfo_from_ip(self.event, "fake_field")
+
+        self.assertEqual(
+            exc.exception.args[0],
+            "IPInfo is not configured on the provided match_field: fake_field",
         )
 
 
